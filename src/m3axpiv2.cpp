@@ -658,7 +658,7 @@ static py::dict g_m3axpi_forward()
 #define STRINGIFY(x) #x
 #define MACRO_STRINGIFY(x) STRINGIFY(x)
 
-PYBIND11_MODULE(custom_m3axpi, m) {
+PYBIND11_MODULE(m3axpiv2, m) {
 
     m.def("load", &g_m3axpi_load, py::arg("CfgPath"));
 
