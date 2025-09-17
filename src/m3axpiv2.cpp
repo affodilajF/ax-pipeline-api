@@ -40,10 +40,12 @@ struct _g_m3axpi_
 {
     static AX_S32 g_isp_force_loop_exit;
     static CAMERA_T gCams[MAX_CAMERAS];
+    static pthread_mutex_t g_capture_for_ai_mutex;
     static pthread_mutex_t g_forward_mutex;
     static pthread_mutex_t g_capture_mutex;
-    static cv::Mat g_capture, g_display;
+    static cv::Mat g_capture, g_display, g_forward_img;
     static std::queue<axdl_results_t> g_result_forward;
+    static std::queue<cv::Mat> g_img_queue;
     static pipeline_t pipelines[4];
     static int bRunJoint, bRunState;
     static void *gNpuModels;
@@ -280,6 +282,7 @@ struct _g_m3axpi_
                 pipeline_ivps_config_t &config2 = pipe2.m_ivps_attr;
                 config2.n_ivps_grp = 2; // 重复的会创建失败
                 config2.n_ivps_fps = 60;
+                config2.n_ivps_rotate = 0;
                 config2.n_ivps_width = SAMPLE_IVPS_ALGO_WIDTH;
                 config2.n_ivps_height = SAMPLE_IVPS_ALGO_HEIGHT;
                 if (axdl_get_model_type(gNpuModels) != MT_SEG_PPHUMSEG)
@@ -392,22 +395,58 @@ struct _g_m3axpi_
             {
                 case po_buff_nv12:
                     tSrcFrame.eDtype = axdl_color_space_nv12;
+                    printf("[INFO] Detected Buffer Type: NV12\n");
+                    fflush(stdout); 
                     break;
+
                 case po_buff_bgr:
                     tSrcFrame.eDtype = axdl_color_space_bgr;
+                    printf("[INFO] Detected Buffer Type: BGR\n");
+                    fflush(stdout); 
                     break;
+
                 case po_buff_rgb:
                     tSrcFrame.eDtype = axdl_color_space_rgb;
+                    printf("[INFO] Detected Buffer Type: RGB\n");
+                    fflush(stdout); 
                     break;
+
                 default:
+                    printf("[WARN] Unknown Buffer Type: %d — Defaulting to BGR\n", buff->d_type);
+                    fflush(stdout); 
+                    tSrcFrame.eDtype = axdl_color_space_bgr;
                     break;
             }
+
             tSrcFrame.nWidth = buff->n_width;
             tSrcFrame.nHeight = buff->n_height;
             tSrcFrame.pVir = (unsigned char *)buff->p_vir;
             tSrcFrame.pPhy = buff->p_phy;
             tSrcFrame.tStride_W = buff->n_stride;
             tSrcFrame.nSize = buff->n_size;
+
+            // 🔹 Nge-log info frame sebelum inference
+            printf("Frame Info: dtypebuff=%d, tsrcdtype=%d, width=%d, height=%d, stride=%d, size=%u, pVir=%p, pPhy=%llu\n",
+                buff->d_type,
+                tSrcFrame.eDtype,
+                buff->n_width,
+                buff->n_height,
+                buff->n_stride,
+                buff->n_size,
+                buff->p_vir,
+                buff->p_phy
+            );
+            fflush(stdout); // biar langsung muncul di terminal
+
+            // RGB 
+            cv::Mat img;
+            int stride =  tSrcFrame.tStride_W * 3;
+            img = cv::Mat(tSrcFrame.nHeight, tSrcFrame.nWidth, CV_8UC3, tSrcFrame.pVir, stride).clone();
+
+            pthread_mutex_lock(&g_capture_for_ai_mutex);
+            if (g_img_queue.size() > 3) g_img_queue.pop(); 
+            g_img_queue.push(img);
+            pthread_mutex_unlock(&g_capture_for_ai_mutex);
 
             axdl_inference(gNpuModels, &tSrcFrame, &mResults);
             pthread_mutex_lock(&g_forward_mutex);
@@ -422,6 +461,8 @@ struct _g_m3axpi_
 
 AX_S32 _g_m3axpi_::g_isp_force_loop_exit = 0;
 CAMERA_T _g_m3axpi_::gCams[MAX_CAMERAS];
+std::queue<cv::Mat> _g_m3axpi_::g_img_queue;
+pthread_mutex_t _g_m3axpi_::g_capture_for_ai_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t _g_m3axpi_::g_forward_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t _g_m3axpi_::g_capture_mutex = PTHREAD_MUTEX_INITIALIZER;
 cv::Mat _g_m3axpi_::g_capture, _g_m3axpi_::g_display;
@@ -536,6 +577,30 @@ static py::list g_m3axpi_capture()
     pthread_mutex_unlock(&g_m3axpi.g_capture_mutex);
     // CALC_FPS("g_m3axpi_capture");
     return return_img;
+}
+
+static py::list g_m3axpi_capture_for_ai()
+{
+    py::list ret;
+    pthread_mutex_lock(&g_m3axpi.g_capture_for_ai_mutex);
+
+    if (!g_m3axpi.g_img_queue.empty()) {
+        cv::Mat img = g_m3axpi.g_img_queue.back().clone(); 
+        g_m3axpi.g_img_queue = std::queue<cv::Mat>();    
+
+        int rows = img.rows;
+        int cols = img.cols;
+        int ch   = img.channels();
+
+        ret.append(rows);
+        ret.append(cols);
+        ret.append(ch);
+        ret.append(py::bytes((char*)img.data, img.total() * img.elemSize()));
+
+    }
+
+    pthread_mutex_unlock(&g_m3axpi.g_capture_for_ai_mutex);
+    return ret;
 }
 
 static py::dict g_m3axpi_forward()
@@ -669,6 +734,9 @@ PYBIND11_MODULE(m3axpiv2, m) {
     m.def("capture", &g_m3axpi_capture);
 
     m.def("forward", &g_m3axpi_forward);
+
+    // For debugging: get last raw frame before NPU
+    m.def("capture_for_ai", &g_m3axpi_capture_for_ai, "Get last raw frame before NPU");
 
     m.attr("__version__") = MACRO_STRINGIFY(VERSION_INFO);
 }
