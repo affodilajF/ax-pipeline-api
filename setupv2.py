@@ -31,12 +31,12 @@ print('pipeline version: ', version)
 
 
 ext_modules = [
-    Pybind11Extension("m3axpi",
+    Pybind11Extension("m3axpiv2",
 
             include_dirs=[
                 '/opt/include', '/usr/include/opencv4/', '/usr/local/include/opencv4/',
             ],
-            sources= ["src/m3axpi.cpp"],
+            sources= ["src/m3axpiv2.cpp"],
             libraries=[
                 "opencv_videoio", "opencv_highgui", "opencv_core", "opencv_imgproc", "opencv_imgcodecs", "opencv_freetype", "opencv_freetype",  "sample_vin_ivps_joint_vo_sipy"
             ],
