@@ -395,25 +395,17 @@ struct _g_m3axpi_
             {
                 case po_buff_nv12:
                     tSrcFrame.eDtype = axdl_color_space_nv12;
-                    printf("[INFO] Detected Buffer Type: NV12\n");
-                    fflush(stdout); 
                     break;
 
                 case po_buff_bgr:
                     tSrcFrame.eDtype = axdl_color_space_bgr;
-                    printf("[INFO] Detected Buffer Type: BGR\n");
-                    fflush(stdout); 
                     break;
 
                 case po_buff_rgb:
                     tSrcFrame.eDtype = axdl_color_space_rgb;
-                    printf("[INFO] Detected Buffer Type: RGB\n");
-                    fflush(stdout); 
                     break;
 
                 default:
-                    printf("[WARN] Unknown Buffer Type: %d — Defaulting to BGR\n", buff->d_type);
-                    fflush(stdout); 
                     tSrcFrame.eDtype = axdl_color_space_bgr;
                     break;
             }
@@ -425,23 +417,13 @@ struct _g_m3axpi_
             tSrcFrame.tStride_W = buff->n_stride;
             tSrcFrame.nSize = buff->n_size;
 
-            // 🔹 Nge-log info frame sebelum inference
-            printf("Frame Info: dtypebuff=%d, tsrcdtype=%d, width=%d, height=%d, stride=%d, size=%u, pVir=%p, pPhy=%llu\n",
-                buff->d_type,
-                tSrcFrame.eDtype,
-                buff->n_width,
-                buff->n_height,
-                buff->n_stride,
-                buff->n_size,
-                buff->p_vir,
-                buff->p_phy
-            );
-            fflush(stdout); // biar langsung muncul di terminal
-
             // RGB 
-            cv::Mat img;
+            // cv::Mat img;
+            // img = cv::Mat(tSrcFrame.nHeight, tSrcFrame.nWidth, CV_8UC3, tSrcFrame.pVir).clone();
+            v::Mat img;
             int stride =  tSrcFrame.tStride_W * 3;
             img = cv::Mat(tSrcFrame.nHeight, tSrcFrame.nWidth, CV_8UC3, tSrcFrame.pVir, stride).clone();
+
 
             pthread_mutex_lock(&g_capture_for_ai_mutex);
             if (g_img_queue.size() > 3) g_img_queue.pop(); 
